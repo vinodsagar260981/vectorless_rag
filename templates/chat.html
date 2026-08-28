@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RAG Chatbot</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="min-h-screen bg-neutral-950 text-neutral-100">
+    <main class="mx-auto flex min-h-screen w-full max-w-4xl flex-col px-4 py-5 sm:px-6">
+      <header class="flex items-center justify-between border-b border-neutral-800 pb-4">
+        <div>
+          <h1 class="text-xl font-semibold text-white">RAG Chatbot</h1>
+          <p id="statusText" class="mt-1 text-sm text-neutral-400">Preparing your assistant...</p>
+        </div>
+        <span id="statusDot" class="h-2.5 w-2.5 rounded-full bg-amber-300"></span>
+      </header>
+
+      <section class="flex min-h-0 flex-1 flex-col">
+        <div id="messages" class="flex-1 space-y-5 overflow-y-auto py-6">
+          <div class="flex justify-start">
+            <div class="max-w-[85%] rounded-2xl rounded-tl-sm bg-neutral-900 px-4 py-3 text-sm leading-6 text-neutral-200 ring-1 ring-neutral-800">
+              Hi, I am readying the knowledge base. You can ask your question in a moment.
+            </div>
+          </div>
+        </div>
+
+        <form id="chatForm" class="sticky bottom-0 border-t border-neutral-800 bg-neutral-950 py-4">
+          <label for="query" class="sr-only">Message</label>
+          <div class="flex items-end gap-3 rounded-2xl border border-neutral-800 bg-neutral-900 p-2 shadow-2xl shadow-black/20">
+            <textarea
+              id="query"
+              name="query"
+              rows="1"
+              placeholder="Ask anything about the document..."
+              class="max-h-36 min-h-11 flex-1 resize-none bg-transparent px-3 py-2.5 text-sm leading-6 text-neutral-100 outline-none placeholder:text-neutral-500"
+              disabled
+            ></textarea>
+            <button
+              id="sendButton"
+              type="submit"
+              class="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-white text-neutral-950 transition hover:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label="Send message"
+              disabled
+            >
+              <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="m22 2-7 20-4-9-9-4Z"></path>
+                <path d="M22 2 11 13"></path>
+              </svg>
+            </button>
+          </div>
+        </form>
+      </section>
+    </main>
+
+    <script>
+      const chatForm = document.querySelector("#chatForm");
+      const messages = document.querySelector("#messages");
+      const queryInput = document.querySelector("#query");
+      const sendButton = document.querySelector("#sendButton");
+      const statusText = document.querySelector("#statusText");
+      const statusDot = document.querySelector("#statusDot");
+
+      let ready = false;
+
+      function setReady(value, text) {
+        ready = value;
+        queryInput.disabled = !value;
+        sendButton.disabled = !value;
+        statusText.textContent = text;
+        statusDot.className = value
+          ? "h-2.5 w-2.5 rounded-full bg-emerald-400"
+          : "h-2.5 w-2.5 rounded-full bg-amber-300";
+      }
+
+      function autoResizeInput() {
+        queryInput.style.height = "auto";
+        queryInput.style.height = `${queryInput.scrollHeight}px`;
+      }
+
+      function addMessage(role, text, options = {}) {
+        const row = document.createElement("div");
+        const isUser = role === "user";
+        row.className = isUser ? "flex justify-end" : "flex justify-start";
+
+        const bubble = document.createElement("div");
+        bubble.className = [
+          "max-w-[85%] whitespace-pre-wrap px-4 py-3 text-sm leading-6",
+          isUser
+            ? "rounded-2xl rounded-tr-sm bg-white text-neutral-950"
+            : "rounded-2xl rounded-tl-sm bg-neutral-900 text-neutral-200 ring-1 ring-neutral-800",
+          options.muted ? "text-neutral-400" : "",
+        ].join(" ");
+        bubble.textContent = text;
+
+        row.appendChild(bubble);
+        messages.appendChild(row);
+        messages.scrollTop = messages.scrollHeight;
+        return row;
+      }
+
+      async function requestJson(url, options = {}) {
+        const response = await fetch(url, {
+          headers: { "Content-Type": "application/json" },
+          ...options,
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.detail || "Request failed.");
+        }
+        return data;
+      }
+
+      async function initializeAssistant() {
+        try {
+          const status = await requestJson("/api/status");
+          if (!status.ready) {
+            await requestJson("/api/load-document", {
+              method: "POST",
+              body: JSON.stringify({ pdf_path: "./Detailed_Summary.pdf" }),
+            });
+          }
+
+          setReady(true, "Ready");
+          addMessage("assistant", "I am ready. Ask me anything about the document.");
+          queryInput.focus();
+        } catch (error) {
+          setReady(false, "Setup failed");
+          statusDot.className = "h-2.5 w-2.5 rounded-full bg-red-400";
+          addMessage("assistant", `I could not start the chatbot: ${error.message}`, { muted: true });
+        }
+      }
+
+      chatForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const query = queryInput.value.trim();
+        if (!query || !ready) return;
+
+        addMessage("user", query);
+        queryInput.value = "";
+        autoResizeInput();
+
+        sendButton.disabled = true;
+        const thinkingRow = addMessage("assistant", "Thinking...", { muted: true });
+
+        try {
+          const result = await requestJson("/api/ask", {
+            method: "POST",
+            body: JSON.stringify({ query }),
+          });
+          thinkingRow.remove();
+          addMessage("assistant", result.answer);
+        } catch (error) {
+          thinkingRow.remove();
+          addMessage("assistant", `Sorry, I could not answer that: ${error.message}`, { muted: true });
+        } finally {
+          sendButton.disabled = false;
+          queryInput.focus();
+        }
+      });
+
+      queryInput.addEventListener("input", autoResizeInput);
+      queryInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" && !event.shiftKey) {
+          event.preventDefault();
+          chatForm.requestSubmit();
+        }
+      });
+
+      initializeAssistant();
+    </script>
+  </body>
+</html>
