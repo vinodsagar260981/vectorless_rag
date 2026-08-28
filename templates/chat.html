@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>RAG Chatbot</title>
+    <title>Interactive AI</title>
     <script src="https://cdn.tailwindcss.com"></script>
   </head>
   <body class="min-h-screen bg-neutral-950 text-neutral-100">
@@ -123,7 +123,8 @@
           }
 
           setReady(true, "Ready");
-          addMessage("assistant", "I am ready. Ask me anything about the document.");
+          addMessage("assistant", "I am ready. Please ASk Related to Documents.");
+          addMessage("assistant", "Example - List the skills , Current Organization, Current & Excpected Salary, Joining ");
           queryInput.focus();
         } catch (error) {
           setReady(false, "Setup failed");
